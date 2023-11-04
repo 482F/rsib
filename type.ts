@@ -6,3 +6,11 @@ export type WsMessage =
   } | {
     type: 'keepalive'
   })
+
+export type Script = {
+  name: string
+  path: string
+  body: string
+  match?: string
+  'run-at'?: string
+}
