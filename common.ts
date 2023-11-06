@@ -1,20 +1,26 @@
 import { port } from './const.ts'
-import { WsMessage } from './type.ts'
+import { Script, WsMessage } from './type.ts'
 
 export const apis = {
-  exec: ({ scriptName }: { scriptName: string }, wsSender) => {
+  exec: ({ scriptName }: { scriptName: string }, { wsSender }) => {
     wsSender('exec-order', { scriptName })
-    return Promise.resolve(new Response(''))
+    return Promise.resolve('')
+  },
+  list: (_: unknown, { scriptMap }) => {
+    return Promise.resolve(scriptMap)
   },
 } satisfies {
   [path: string]: (
     // deno-lint-ignore no-explicit-any
     body: any,
-    wsSender: <
-      TYPE extends WsMessage['type'],
-      BODY extends Omit<({ type: TYPE } & WsMessage), 'type'>,
-    >(type: TYPE, body: BODY) => void,
-  ) => Promise<Response>
+    opts: {
+      wsSender: <
+        TYPE extends WsMessage['type'],
+        BODY extends Omit<({ type: TYPE } & WsMessage), 'type'>,
+      >(type: TYPE, body: BODY) => void
+      scriptMap: { [k: string]: Script }
+    },
+  ) => Promise<any>
 }
 
 export async function callApi<
@@ -34,4 +40,17 @@ export function createWsSender(webSockets: Set<WebSocket>) {
   >(type: TYPE, body: BODY) {
     webSockets.forEach((ws) => ws.send(JSON.stringify({ ...body, type })))
   }
+}
+
+export function parseUSComment(body: string) {
+  return Object.fromEntries(
+    [...body.matchAll(/==UserScript==[\s\S]+==\/UserScript==/g)]
+      .flatMap((match) =>
+        [...(match[0] ?? '').matchAll(
+          /^\/\/\s+\@(?<key>\S+)\s+(?<value>.+)$/mg,
+        )].map((
+          rawEntry,
+        ) => [rawEntry.groups?.key ?? '', rawEntry.groups?.value ?? ''])
+      ),
+  )
 }

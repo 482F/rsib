@@ -1,17 +1,42 @@
 #!/usr/bin/env -S deno run --no-config --allow-net --allow-read --ext ts
-// { 'user-script': '~/git/deno-user-script/**/*.bundled.js' } みたいな感じで設定
+// ['~/git/deno-user-script/**/*.bundled.js'] みたいな感じで設定
 /**
- *  http://localhost:55923/script/user-script/get-lyrics.ts.bundled.js で配信
+ *  http://localhost:55923/script/get-lyrics.ts.bundled.js で配信
  *  /list でファイル一覧配信
- *  /exec で即時実行など
- *   websocket も同一ポートで待ち受けられるっぽい
  */
 
 import { port } from '../const.ts'
-import { apis, callApi, createWsSender } from '../common.ts'
+import { apis, callApi, createWsSender, parseUSComment } from '../common.ts'
 import { Command } from 'https://deno.land/x/cliffy@v0.25.7/command/mod.ts'
+import { expandGlob } from 'https://deno.land/std@0.205.0/fs/expand_glob.ts'
+import { basename } from 'https://deno.land/std@0.205.0/path/basename.ts'
 
-function serve(_: unknown, configFilePath: string) {
+async function serve(_: unknown, ...scriptPathGlobs: string[]) {
+  const scriptPaths = new Set<string>()
+
+  for (const glob of scriptPathGlobs) {
+    for await (const entry of expandGlob(glob)) {
+      if (!entry.isFile) {
+        continue
+      }
+      scriptPaths.add(entry.path)
+    }
+  }
+
+  const scriptMap = Object.fromEntries(
+    await Promise.all([...scriptPaths].map(async (scriptPath) => {
+      const body = await Deno.readTextFile(scriptPath)
+      const metas = parseUSComment(body)
+      return {
+        name: metas.name ?? basename(scriptPath),
+        path: scriptPath,
+        body,
+        match: metas.match,
+        'run-at': metas['run-at'],
+      }
+    })).then((scripts) => scripts.map((script) => [script.name, script])),
+  )
+
   const webSockets: Set<WebSocket> = new Set()
   const wsSender = createWsSender(webSockets)
 
@@ -43,15 +68,19 @@ function serve(_: unknown, configFilePath: string) {
           return new Response()
         }
 
-        return await apis[rest](
-          await request.json().catch(() => ({})),
-          wsSender,
-        )
+        return new Response(JSON.stringify(
+          await apis[rest](
+            await request.json().catch(() => ({})),
+            { wsSender, scriptMap },
+          ),
+        ))
       } else if (first === 'script') {
-        const file = await Deno.open(
-          '/home/normal/temp/deno-build/main.ts.bundled.js',
-          { read: true },
-        )
+        const script = scriptMap[rest]
+        if (!script) {
+          return new Response()
+        }
+
+        const file = await Deno.open(script.path, { read: true })
         return new Response(file.readable)
       }
 
@@ -75,7 +104,7 @@ const command = new Command()
     'serve',
     new Command()
       .description('launch server')
-      .arguments('<config-file:string>')
+      .arguments('<script-glob-patterns...>')
       .action(serve),
   )
   .command(
