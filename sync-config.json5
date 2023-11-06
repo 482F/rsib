@@ -1,0 +1,21 @@
+{
+  repository: {
+    url: 'git@github.com:482F/sync-config-templates.git',
+    branch: 'master',
+  },
+  mergeMode: 'squash-merge',
+  folders: [
+    {
+      name: 'deno',
+      destination: '.',
+    },
+    {
+      name: 'deno',
+      destination: 'browser-extension',
+    },
+    {
+      name: 'common',
+      destination: '.',
+    },
+  ],
+}
