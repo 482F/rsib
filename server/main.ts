@@ -1,19 +1,129 @@
-#!/usr/bin/env -S deno run --no-config --allow-net --allow-read --ext ts
-// ['~/git/deno-user-script/**/*.bundled.js'] みたいな感じで設定
-/**
- *  http://localhost:55923/script/get-lyrics.ts.bundled.js で配信
- *  /list でファイル一覧配信
- */
+#!/usr/bin/env -S deno run --no-config --allow-net --allow-read --allow-env=HOME --ext ts
 
 import { port } from '../const.ts'
-import { apis, callApi, createWsSender, parseUSComment } from '../common.ts'
-import { Command } from 'https://deno.land/x/cliffy@v0.25.7/command/mod.ts'
+import {
+  apis,
+  callApi,
+  createWsSender,
+  isNonNullish,
+  parseUSComment,
+} from '../common.ts'
 import { expandGlob } from 'https://deno.land/std@0.205.0/fs/expand_glob.ts'
-import { basename } from 'https://deno.land/std@0.205.0/path/basename.ts'
+import {
+  basename,
+  dirname,
+  globToRegExp,
+  resolve,
+} from 'https://deno.land/std@0.205.0/path/mod.ts'
+import { Command } from 'https://deno.land/x/cliffy@v0.25.7/command/mod.ts'
+import { Script } from '../type.ts'
+import { delay } from 'https://deno.land/std@0.206.0/async/mod.ts'
 
-async function serve(_: unknown, ...scriptPathGlobs: string[]) {
+function debounce<P extends unknown[], R>(
+  func: (...args: P) => R,
+  waitMs: number,
+): (...args: P) => Promise<R> {
+  let resolver: (result: R) => void = () => {}
+  let promise: Promise<R> = new Promise((r) => resolver = r)
+  let lastCalled = -Infinity
+  return async (...args: P) => {
+    const current = lastCalled = Date.now()
+    await delay(waitMs)
+    if (lastCalled !== current) {
+      return promise
+    }
+    resolver(await func(...args))
+    promise = new Promise((r) => resolver = r)
+    return promise
+  }
+}
+
+function watchGlobs(
+  globs: string[],
+  handler: (event: Deno.FsEvent) => Promise<void> | void,
+) {
+  const regexes = globs.map((glob) => globToRegExp(glob))
+
+  const globAndIsDeeps = globs.map((glob) => ({
+    glob,
+    isDeep: glob.includes('**'),
+  }))
+
+  const deepTargetPathSet = new Set(
+    globAndIsDeeps.filter(({ isDeep }) => isDeep)
+      .map(({ glob }) => glob.replace(/\*\*.+$/, '')),
+  )
+
+  const shallowTargetPathSet = new Set(
+    globAndIsDeeps.filter(({ isDeep }) => !isDeep)
+      .map(({ glob }) => dirname(glob)),
+  )
+  ;[
+    { pathSet: deepTargetPathSet, recursive: true },
+    { pathSet: shallowTargetPathSet, recursive: false },
+  ]
+    .forEach(async ({ pathSet, recursive }) => {
+      for await (
+        const event of Deno.watchFs([...pathSet].map((path) => resolve(path)), {
+          recursive,
+        })
+      ) {
+        event.paths = event.paths.filter((path) =>
+          regexes.some((regex) => regex.test(path))
+        )
+        if (event.paths.length <= 0) {
+          continue
+        }
+        await handler(event)
+      }
+    })
+}
+
+const distResolveRules: {
+  key: string
+  resolver: (path: string, metas: Record<string, string>) => string
+}[] = [
+  { key: 'path', resolver: (path) => path },
+  { key: 'name', resolver: (path) => basename(path) },
+  { key: 'dir', resolver: (path) => dirname(path) },
+]
+
+async function readScript(scriptPath: string): Promise<Script> {
+  const body = await Deno.readTextFile(scriptPath)
+  const ancestorUsComments = await Promise.all(
+    scriptPath.split('/')
+      .slice(0, -1)
+      .map((_, i, splitteds) =>
+        Deno.readTextFile(splitteds.slice(0, i + 1).join('/') + '/uscomment.js')
+          .catch(() => null)
+      ),
+  ).then((r) => r.filter(isNonNullish))
+  const metas = parseUSComment(body, ancestorUsComments)
+
+  const dist = distResolveRules.reduce(
+    (dist, rule) =>
+      dist.replaceAll(`\${${rule.key}}`, rule.resolver(scriptPath, metas)),
+    metas.dist ?? '',
+  )
+
+  return {
+    name: metas.name ?? basename(scriptPath),
+    path: scriptPath,
+    dist,
+    match: metas.match,
+    runAt: metas['run-at'],
+  }
+}
+
+async function serve(_: unknown, ...rawScriptPathGlobs: string[]) {
+  // ホームディレクトリ展開 (ログインユーザのみ)
+  const scriptPathGlobs = rawScriptPathGlobs.map((glob) =>
+    glob.replace(/^~/, Deno.env.get('HOME') || '~')
+  )
+
   const scriptPaths = new Set<string>()
 
+  // glob から該当するファイルのみ抽出
   for (const glob of scriptPathGlobs) {
     for await (const entry of expandGlob(glob)) {
       if (!entry.isFile) {
@@ -23,24 +133,62 @@ async function serve(_: unknown, ...scriptPathGlobs: string[]) {
     }
   }
 
-  const scriptMap = Object.fromEntries(
-    await Promise.all([...scriptPaths].map(async (scriptPath) => {
-      const body = await Deno.readTextFile(scriptPath)
-      const metas = parseUSComment(body)
-      return {
-        name: metas.name ?? basename(scriptPath),
-        path: scriptPath,
-        body,
-        match: metas.match,
-        'run-at': metas['run-at'],
-      }
-    })).then((scripts) => scripts.map((script) => [script.name, script])),
+  // UserScript コメントからメタデータ抽出 & 整形
+  const scriptNameMap = Object.fromEntries(
+    await Promise.all([...scriptPaths].map(readScript)).then((scripts) =>
+      scripts.map((script) => [script.name, script])
+    ),
+  )
+  const scriptPathMap = Object.fromEntries(
+    Object.entries(scriptNameMap).map(([, script]) => [script.path, script]),
   )
 
   const webSockets: Set<WebSocket> = new Set()
   const wsSender = createWsSender(webSockets)
 
+  // chrome extension background が止まらないように keepalive
   setInterval(() => wsSender('keepalive', {}), 1000 * 20)
+
+  const updateFunctionMap: Record<string, () => void> = {}
+
+  // glob 下を監視
+  watchGlobs(scriptPathGlobs, (e) => {
+    e.paths.forEach((path) => {
+      ;(updateFunctionMap[path] ??= debounce(
+        async () => {
+          const script = await readScript(path).catch(() => null)
+          if (script) {
+            // body 以外のメタデータが同一であれば変更なしとする
+            if (
+              JSON.stringify({ ...script, body: '' }) ===
+                JSON.stringify({ ...(scriptPathMap[path] ?? {}), body: '' })
+            ) {
+              return
+            }
+
+            scriptPathMap[path] = script
+            scriptNameMap[script.name] = script
+            wsSender('update-scriptmap', {
+              scriptMap: { [script.name]: script },
+            })
+          } else {
+            const { name } = scriptPathMap[path] ?? {}
+            if (!name) {
+              return
+            }
+            delete scriptPathMap[path]
+            delete scriptNameMap[name]
+            wsSender('update-scriptmap', {
+              scriptMap: { [name]: null },
+            })
+          }
+        },
+        1000,
+      ))()
+    })
+  })
+
+  // websocket と HTTP エンドポイント待ち受け
   Deno.serve({
     port,
     handler: async (request) => {
@@ -49,6 +197,7 @@ async function serve(_: unknown, ...scriptPathGlobs: string[]) {
 
         socket.onopen = () => {
           webSockets.add(socket)
+          wsSender('update-scriptmap', { scriptMap: scriptNameMap }, [socket])
         }
         socket.onclose = () => {
           webSockets.delete(socket)
@@ -61,7 +210,6 @@ async function serve(_: unknown, ...scriptPathGlobs: string[]) {
       }
       const path = new URL(request.url).pathname.replace(/^\//, '')
       const [, first = '', rest = ''] = path.match(/^([^\/]+)\/(.+)$/) ?? []
-      console.log({ path, first, rest })
 
       if (first === 'api') {
         if (!((key: string): key is keyof typeof apis => key in apis)(rest)) {
@@ -71,16 +219,16 @@ async function serve(_: unknown, ...scriptPathGlobs: string[]) {
         return new Response(JSON.stringify(
           await apis[rest](
             await request.json().catch(() => ({})),
-            { wsSender, scriptMap },
+            { wsSender, scriptMap: scriptNameMap },
           ),
         ))
       } else if (first === 'script') {
-        const script = scriptMap[rest]
+        const script = scriptNameMap[decodeURIComponent(rest)]
         if (!script) {
           return new Response()
         }
 
-        const file = await Deno.open(script.path, { read: true })
+        const file = await Deno.open(script.dist ?? script.path, { read: true })
         return new Response(file.readable)
       }
 

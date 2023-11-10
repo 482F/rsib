@@ -37,20 +37,27 @@ export function createWsSender(webSockets: Set<WebSocket>) {
   return function wsSender<
     TYPE extends WsMessage['type'],
     BODY extends Omit<({ type: TYPE } & WsMessage), 'type'>,
-  >(type: TYPE, body: BODY) {
-    webSockets.forEach((ws) => ws.send(JSON.stringify({ ...body, type })))
+  >(type: TYPE, body: BODY, targets?: Iterable<WebSocket>) {
+    ;(targets ? [...targets] : webSockets).forEach((ws) =>
+      ws.send(JSON.stringify({ ...body, type }))
+    )
   }
 }
 
-export function parseUSComment(body: string) {
-  return Object.fromEntries(
-    [...body.matchAll(/==UserScript==[\s\S]+==\/UserScript==/g)]
-      .flatMap((match) =>
-        [...(match[0] ?? '').matchAll(
-          /^\/\/\s+\@(?<key>\S+)\s+(?<value>.+)$/mg,
-        )].map((
-          rawEntry,
-        ) => [rawEntry.groups?.key ?? '', rawEntry.groups?.value ?? ''])
-      ),
-  )
+function _parseUsComment(body: string) {
+  return [...body.matchAll(/==UserScript==[\s\S]+==\/UserScript==/g)]
+    .flatMap((match) =>
+      [...(match[0] ?? '').matchAll(
+        /^\/\/\!?\s+\@(?<key>\S+)\s+(?<value>.+)$/mg,
+      )].map((
+        rawEntry,
+      ) => [rawEntry.groups?.key ?? '', rawEntry.groups?.value ?? ''])
+    )
+}
+export function parseUSComment(body: string, ancestors: string[]) {
+  return Object.fromEntries([...ancestors, body].flatMap(_parseUsComment))
+}
+
+export function isNonNullish<T>(val: T): val is T & Record<string, unknown> {
+  return val !== null && val !== undefined
 }
