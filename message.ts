@@ -5,31 +5,41 @@ export function messengerCreator<
   MessageUnion extends {
     type: string
     request?: Record<string, unknown>
+    response?: Record<string, unknown>
   },
 >() {
+  type MessageByType<Type extends MessageUnion['type']> =
+    & { type: Type }
+    & MessageUnion
   type Handlers = {
     [type in MessageUnion['type']]: (
-      request: ({ type: type } & MessageUnion)['request'],
-    ) => void
+      request: MessageByType<type>['request'],
+    ) => MessageByType<type>['response']
   }
   return {
     createSender<Option extends Record<string, unknown>>(
-      rawSender: (type: string, rawMessage: string, option?: Option) => void,
+      rawSender: (
+        type: string,
+        rawMessage: string,
+        option?: Option,
+      ) => Promise<string | void> | string | void,
     ) {
-      return function sender<
+      return async function sender<
         Type extends MessageUnion['type'],
         Message extends ({ type: Type } & MessageUnion),
       >(
         type: Type,
         request: Message['request'],
         option?: Option,
-      ): void {
+      ): Promise<Message['response']> {
         const rawMessage = JSON.stringify({ type, request })
-        rawSender(type, rawMessage, option)
+        return JSON.parse(await rawSender(type, rawMessage, option) ?? 'null')
       }
     },
     createListener(
-      rawListener: (listener: (rawMessage: string) => void) => void,
+      rawListener: (
+        listener: (rawMessage: string) => MessageUnion['response'],
+      ) => void,
     ) {
       return function listener(
         handlers: Handlers,
@@ -37,7 +47,7 @@ export function messengerCreator<
         rawListener((rawMessage) => {
           const message = JSON.parse(rawMessage)
           const handler = handlers[message.type as MessageUnion['type']]
-          handler(message.request)
+          return handler(message.request)
         })
       }
     },

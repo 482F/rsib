@@ -189,12 +189,12 @@ async function serve(_: unknown, ...rawScriptPathGlobs: string[]) {
 
   const apiHandler = apiMessenger.createHandler(
     {
-      exec: ({ scriptName }: { scriptName: string }) => {
+      exec({ scriptName }) {
         wsSender('exec-order', { scriptName })
         return null
       },
-      list: (_: unknown) => {
-        return scriptNameMap
+      list() {
+        return { scriptMap: scriptNameMap }
       },
     },
   )
