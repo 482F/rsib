@@ -1,16 +1,18 @@
 import { port } from '../const.ts'
 import { websocketMessenger } from '../message.ts'
 import { Script } from '../type.ts'
-import { Message } from './ext-type.ts'
+import { extensionMessenger } from './message.ts'
 
 const scriptMap: Record<string, Script> = {}
 
 export function background(
-  messageSender: (
-    message: Message,
-    option?: { activeTab?: boolean },
-  ) => void,
+  uniqueSender: Parameters<
+    typeof extensionMessenger.createSender<{ activeTab?: boolean }>
+  >[0],
 ) {
+  const sender = extensionMessenger.createSender(
+    uniqueSender,
+  )
   websocketMessenger.createListener()({
     'keepalive': () => {},
     'exec-order': (message) => {
@@ -20,8 +22,7 @@ export function background(
         return
       }
 
-      messageSender({
-        type: 'exec-order',
+      sender('exec-order', {
         scriptUrl:
           `http://localhost:${port}/script/${script.name}#${Date.now()}`,
       }, { activeTab: true })

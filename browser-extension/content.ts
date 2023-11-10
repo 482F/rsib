@@ -1,19 +1,13 @@
-import { Message } from './ext-type.ts'
-
-const handlers = {
-  'exec-order': (message) => {
-    const script = document.createElement('script')
-    script.src = message.scriptUrl
-    document.head.appendChild(script)
-  },
-} satisfies {
-  [name in Message['type']]: (message: Message & { type: name }) => void
-}
+import { extensionMessenger } from './message.ts'
 
 export function listen(
-  listener: (handler: (message: Message) => void) => void,
+  rawListener: Parameters<typeof extensionMessenger.createListener>[0],
 ) {
-  listener((message: Message) => {
-    handlers[message.type](message as any)
+  extensionMessenger.createListener(rawListener)({
+    'exec-order': ({ scriptUrl }) => {
+      const script = document.createElement('script')
+      script.src = scriptUrl
+      document.head.appendChild(script)
+    },
   })
 }

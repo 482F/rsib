@@ -12,15 +12,7 @@ listen(
           return
         }
 
-        const message = (() => {
-          try {
-            return JSON.parse(rawMessage)
-          } catch (_e) {
-            return null
-          }
-        })()
-
-        listener(message)
+        listener(rawMessage)
         return true
       },
     )
