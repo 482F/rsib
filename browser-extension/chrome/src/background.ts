@@ -7,7 +7,7 @@ function sendMessage(tabIds: number[], rawMessage: string) {
   tabIds.forEach((tabId) => chrome.tabs.sendMessage(tabId, rawMessage))
 }
 
-background(async (body, { activeTab } = {}) => {
+background(async (_type, body, { activeTab } = {}) => {
   const tabIds = await (async () => {
     if (activeTab) {
       const windowId = await chrome.windows.getLastFocused().then((win) =>

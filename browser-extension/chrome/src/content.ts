@@ -6,7 +6,6 @@ listen(
   (listener) => {
     chrome.runtime.onMessage.addListener(
       (rawMessage, sender, _sendResponse) => {
-        console.log({ rawMessage, sender })
 
         if (typeof rawMessage !== 'string') {
           return
