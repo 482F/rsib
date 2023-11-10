@@ -170,6 +170,7 @@ async function serve(_: unknown, ...rawScriptPathGlobs: string[]) {
             scriptNameMap[script.name] = script
             wsSender('update-scriptmap', {
               scriptMap: { [script.name]: script },
+              isInit: false,
             })
           } else {
             const { name } = scriptPathMap[path] ?? {}
@@ -180,6 +181,7 @@ async function serve(_: unknown, ...rawScriptPathGlobs: string[]) {
             delete scriptNameMap[name]
             wsSender('update-scriptmap', {
               scriptMap: { [name]: null },
+              isInit: false,
             })
           }
         },
@@ -197,7 +199,10 @@ async function serve(_: unknown, ...rawScriptPathGlobs: string[]) {
 
         socket.onopen = () => {
           webSockets.add(socket)
-          wsSender('update-scriptmap', { scriptMap: scriptNameMap }, [socket])
+          wsSender('update-scriptmap', {
+            scriptMap: scriptNameMap,
+            isInit: true,
+          }, [socket])
         }
         socket.onclose = () => {
           webSockets.delete(socket)
