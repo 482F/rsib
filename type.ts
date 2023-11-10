@@ -1,16 +1,3 @@
-export type WsMessage =
-  & { type: string }
-  & ({
-    type: 'keepalive'
-  } | {
-    type: 'exec-order'
-    scriptName: string
-  } | {
-    type: 'update-scriptmap'
-    scriptMap: Record<string, Script | null>
-    isInit: boolean
-  })
-
 export type Script = {
   name: string
   path: string

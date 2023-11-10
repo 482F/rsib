@@ -1,5 +1,6 @@
 import { port } from './const.ts'
-import { Script, WsMessage } from './type.ts'
+import { websocketMessenger } from './message.ts'
+import { Script } from './type.ts'
 
 export const apis = {
   exec: ({ scriptName }: { scriptName: string }, { wsSender }) => {
@@ -14,10 +15,7 @@ export const apis = {
     // deno-lint-ignore no-explicit-any
     body: any,
     opts: {
-      wsSender: <
-        TYPE extends WsMessage['type'],
-        BODY extends Omit<({ type: TYPE } & WsMessage), 'type'>,
-      >(type: TYPE, body: BODY) => void
+      wsSender: ReturnType<typeof websocketMessenger.createSender>
       scriptMap: { [k: string]: Script }
     },
   ) => Promise<any>
@@ -31,17 +29,6 @@ export async function callApi<
     method: 'POST',
     body: JSON.stringify(body),
   })
-}
-
-export function createWsSender(webSockets: Set<WebSocket>) {
-  return function wsSender<
-    TYPE extends WsMessage['type'],
-    BODY extends Omit<({ type: TYPE } & WsMessage), 'type'>,
-  >(type: TYPE, body: BODY, targets?: Iterable<WebSocket>) {
-    ;(targets ? [...targets] : webSockets).forEach((ws) =>
-      ws.send(JSON.stringify({ ...body, type }))
-    )
-  }
 }
 
 function _parseUsComment(body: string) {
