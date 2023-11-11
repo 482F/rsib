@@ -1,16 +1,36 @@
 import { port } from '../const.ts'
 import { websocketMessenger } from '../message.ts'
 import { Script } from '../type.ts'
-import { extensionMessenger } from './message.ts'
+import { extensionB2CMessenger, extensionC2BMessenger } from './message.ts'
 
 const scriptMap: Record<string, Script> = {}
 
 export function background(
+  uniqueListener: Parameters<typeof extensionC2BMessenger.createListener>[0],
   uniqueSender: Parameters<
-    typeof extensionMessenger.createSender<{ activeTab?: boolean }>
+    typeof extensionB2CMessenger.createSender<{ activeTab?: boolean }>
   >[0],
 ) {
-  const sender = extensionMessenger.createSender(
+  extensionC2BMessenger.createListener(uniqueListener)(
+    {
+      'get-matched-script-urls': ({ currentUrl }) => {
+        return {
+          scriptMap: Object.fromEntries(
+            Object.entries(
+              scriptMap,
+            )
+              .filter(([, script]) =>
+                new RegExp((script.match ?? '^invalid$').replaceAll('*', '.*'))
+                  .test(
+                    currentUrl,
+                  )
+              ),
+          ),
+        }
+      },
+    },
+  )
+  const sender = extensionB2CMessenger.createSender(
     uniqueSender,
   )
   websocketMessenger.createListener()({
