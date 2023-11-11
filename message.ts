@@ -1,5 +1,11 @@
+import { isNonNullish } from './common.ts'
 import { port } from './const.ts'
 import { Script } from './type.ts'
+
+type Listener<T extends string, R> = {
+  (type: T, rawMessage: string): R
+  (rawMessage: string): R
+}
 
 export function messengerCreator<
   MessageUnion extends {
@@ -11,11 +17,6 @@ export function messengerCreator<
   type MessageByType<Type extends MessageUnion['type']> =
     & { type: Type }
     & MessageUnion
-  type Handlers = {
-    [type in MessageUnion['type']]: (
-      request: MessageByType<type>['request'],
-    ) => MessageByType<type>['response']
-  }
   return {
     createSender<Option extends Record<string, unknown>>(
       rawSender: (
@@ -38,27 +39,38 @@ export function messengerCreator<
     },
     createListener(
       rawListener: (
-        listener: (rawMessage: string) => MessageUnion['response'],
-      ) => void,
+        listener:
+          & ((
+            type: MessageUnion['type'],
+            rawMessage: string,
+          ) => MessageUnion['response'])
+          & ((rawMessage: string) => MessageUnion['response']),
+      ) => MessageUnion['response'],
     ) {
       return function listener(
-        handlers: Handlers,
+        handlers: {
+          [type in MessageUnion['type']]: (
+            request: MessageByType<type>['request'],
+          ) => MessageByType<type>['response']
+        },
       ) {
-        rawListener((rawMessage) => {
-          const message = JSON.parse(rawMessage)
-          const handler = handlers[message.type as MessageUnion['type']]
-          return handler(message.request)
-        })
-      }
-    },
-    createHandler(handlers: Handlers) {
-      return function handler<
-        Type extends MessageUnion['type'],
-      >(
-        type: string,
-        message: string,
-      ) {
-        return handlers[type as Type](JSON.parse(message).request)
+        rawListener(
+          (
+            typeOrRawMessage: MessageUnion['type'] | string,
+            rawMessageOrUndefined?: string | undefined,
+          ) => {
+            const [type, request] = (() => {
+              if (isNonNullish(rawMessageOrUndefined)) {
+                const message = JSON.parse(rawMessageOrUndefined)
+                return [typeOrRawMessage, message.request]
+              } else {
+                const message = JSON.parse(typeOrRawMessage)
+                return [message.type, message.request]
+              }
+            })()
+            return handlers[type as MessageUnion['type']](request)
+          },
+        )
       }
     },
   }
@@ -114,15 +126,7 @@ const _apiMessenger = messengerCreator<
 >()
 
 export const apiMessenger = {
-  createHandler(
-    rawHandlers: Parameters<typeof _apiMessenger.createHandler>[0],
-  ) {
-    const handler = _apiMessenger.createHandler(rawHandlers)
-    return (type: string, request: string) => {
-      const result = handler(type, request)
-      return new Response(JSON.stringify(result || null))
-    }
-  },
+  createListener: _apiMessenger.createListener,
   createSender() {
     return _apiMessenger.createSender(async (type, rawMessage) => {
       const r = await fetch(`http://localhost:${port}/api/${type}`, {

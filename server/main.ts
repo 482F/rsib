@@ -187,7 +187,59 @@ async function serve(_: unknown, ...rawScriptPathGlobs: string[]) {
     })
   })
 
-  const apiHandler = apiMessenger.createHandler(
+  const listener = apiMessenger.createListener(async (listener) => {
+    // websocket と HTTP エンドポイント待ち受け
+    Deno.serve({
+      port,
+      async handler(request) {
+        if (request.headers.get('upgrade') === 'websocket') {
+          const { socket, response } = Deno.upgradeWebSocket(request)
+
+          socket.onopen = () => {
+            webSockets.add(socket)
+            wsSender('update-scriptmap', {
+              scriptMap: scriptNameMap,
+              isInit: true,
+            }, { targets: [socket] })
+          }
+          socket.onclose = () => {
+            webSockets.delete(socket)
+          }
+          socket.onerror = () => {
+            webSockets.delete(socket)
+          }
+
+          return response
+        }
+        const path = new URL(request.url).pathname.replace(/^\//, '')
+        const [, first = '', rest = ''] = path.match(/^([^\/]+)\/(.+)$/) ?? []
+
+        if (first === 'api') {
+          return new Response(
+            JSON.stringify(listener(
+              rest as any,
+              await request.text().catch(() => 'null'),
+            )),
+          )
+          // return apiHandler(rest, await request.text().catch(() => 'null'))
+        } else if (first === 'script') {
+          const script = scriptNameMap[decodeURIComponent(rest)]
+          if (!script) {
+            return new Response()
+          }
+
+          const file = await Deno.open(script.dist ?? script.path, {
+            read: true,
+          })
+          return new Response(file.readable)
+        }
+
+        return new Response()
+      },
+    })
+  })
+
+  listener(
     {
       exec({ scriptName }) {
         wsSender('exec-order', { scriptName })
@@ -198,48 +250,6 @@ async function serve(_: unknown, ...rawScriptPathGlobs: string[]) {
       },
     },
   )
-
-  // websocket と HTTP エンドポイント待ち受け
-  Deno.serve({
-    port,
-    handler: async (request) => {
-      if (request.headers.get('upgrade') === 'websocket') {
-        const { socket, response } = Deno.upgradeWebSocket(request)
-
-        socket.onopen = () => {
-          webSockets.add(socket)
-          wsSender('update-scriptmap', {
-            scriptMap: scriptNameMap,
-            isInit: true,
-          }, { targets: [socket] })
-        }
-        socket.onclose = () => {
-          webSockets.delete(socket)
-        }
-        socket.onerror = () => {
-          webSockets.delete(socket)
-        }
-
-        return response
-      }
-      const path = new URL(request.url).pathname.replace(/^\//, '')
-      const [, first = '', rest = ''] = path.match(/^([^\/]+)\/(.+)$/) ?? []
-
-      if (first === 'api') {
-        return apiHandler(rest, await request.text().catch(() => 'null'))
-      } else if (first === 'script') {
-        const script = scriptNameMap[decodeURIComponent(rest)]
-        if (!script) {
-          return new Response()
-        }
-
-        const file = await Deno.open(script.dist ?? script.path, { read: true })
-        return new Response(file.readable)
-      }
-
-      return new Response()
-    },
-  })
 }
 
 async function exec(_: unknown, scriptName: string) {
