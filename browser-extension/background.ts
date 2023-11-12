@@ -1,7 +1,7 @@
 /// <reference types="https://unpkg.com/chrome-types@0.1.153/index.d.ts" />
 
 import { port } from '../const.ts'
-import { WsMessage } from '../type.ts'
+import { Script, WsMessage } from '../type.ts'
 import { Message } from './ext-type.ts'
 
 function listenWs(handler: (message: WsMessage) => void) {
@@ -29,7 +29,10 @@ function sendMessage(tabId: number, message: Message) {
   chrome.tabs.sendMessage(tabId, JSON.stringify(message))
 }
 
+const scriptMap: Record<string, Script> = {}
+
 const handlers = {
+  'keepalive': () => {},
   'exec-order': async (message) => {
     const windowId = await chrome.windows.getLastFocused().then((win) => win.id)
     if (!windowId) {
@@ -37,18 +40,30 @@ const handlers = {
     }
 
     const [tab] = await chrome.tabs.query({ active: true, windowId })
-    console.log({ tab })
     if (!tab?.id) {
+      return
+    }
+
+    const script = scriptMap[message.scriptName]
+    if (!script) {
       return
     }
 
     sendMessage(tab.id, {
       ...message,
-      scriptUrl:
-        `http://localhost:55923/script/user-script/get-lyrics.ts.bundled.js#${Date.now()}`,
+      scriptUrl: `http://localhost:55923/script/${script.name}#${Date.now()}`,
     })
   },
-  'keepalive': () => {},
+  'update-scriptmap': (message) => {
+    Object.entries(message.scriptMap).forEach(([name, script]) => {
+      if (script) {
+        scriptMap[name] = script
+      } else {
+        delete scriptMap[name]
+      }
+    })
+    console.log('updated', { scriptMap })
+  },
 } satisfies {
   [name in WsMessage['type']]: (message: WsMessage & { type: name }) => void
 }
