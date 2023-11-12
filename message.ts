@@ -7,9 +7,14 @@ export function messengerCreator<
     request?: Record<string, unknown>
   },
 >() {
+  type Handlers = {
+    [type in MessageUnion['type']]: (
+      request: ({ type: type } & MessageUnion)['request'],
+    ) => void
+  }
   return {
     createSender<Option extends Record<string, unknown>>(
-      rawSender: (rawMessage: string, option?: Option) => void,
+      rawSender: (type: string, rawMessage: string, option?: Option) => void,
     ) {
       return function sender<
         Type extends MessageUnion['type'],
@@ -20,24 +25,30 @@ export function messengerCreator<
         option?: Option,
       ): void {
         const rawMessage = JSON.stringify({ type, request })
-        rawSender(rawMessage, option)
+        rawSender(type, rawMessage, option)
       }
     },
     createListener(
       rawListener: (listener: (rawMessage: string) => void) => void,
     ) {
       return function listener(
-        handlers: {
-          [type in MessageUnion['type']]: (
-            request: ({ type: type } & MessageUnion)['request'],
-          ) => void
-        },
+        handlers: Handlers,
       ) {
         rawListener((rawMessage) => {
           const message = JSON.parse(rawMessage)
           const handler = handlers[message.type as MessageUnion['type']]
           handler(message.request)
         })
+      }
+    },
+    createHandler(handlers: Handlers) {
+      return function handler<
+        Type extends MessageUnion['type'],
+      >(
+        type: string,
+        message: string,
+      ) {
+        return handlers[type as Type](JSON.parse(message).request)
       }
     },
   }
@@ -63,7 +74,7 @@ const _websocketMessenger = messengerCreator<
 export const websocketMessenger = {
   createSender(webSockets: Iterable<WebSocket>) {
     return _websocketMessenger.createSender<{ targets?: Iterable<WebSocket> }>(
-      (rawMessage, { targets } = {}) => {
+      (_type, rawMessage, { targets } = {}) => {
         ;[...(targets ?? webSockets)].forEach((ws) => ws.send(rawMessage))
       },
     )
@@ -72,13 +83,43 @@ export const websocketMessenger = {
     return _websocketMessenger.createListener((listener) => {
       const connect = () => {
         const websocket = new WebSocket(`ws://localhost:${port}/`)
-        console.log('connect')
         websocket.onmessage = (e) => {
           listener(e.data)
         }
         websocket.onclose = connect
       }
       connect()
+    })
+  },
+}
+
+const _apiMessenger = messengerCreator<
+  {
+    type: 'exec'
+    request: { scriptName: string }
+  } | {
+    type: 'list'
+    response: { scriptMap: Record<string, Script> }
+  }
+>()
+
+export const apiMessenger = {
+  createHandler(
+    rawHandlers: Parameters<typeof _apiMessenger.createHandler>[0],
+  ) {
+    const handler = _apiMessenger.createHandler(rawHandlers)
+    return (type: string, request: string) => {
+      const result = handler(type, request)
+      return new Response(JSON.stringify(result || null))
+    }
+  },
+  createSender() {
+    return _apiMessenger.createSender(async (type, rawMessage) => {
+      const r = await fetch(`http://localhost:${port}/api/${type}`, {
+        method: 'POST',
+        body: rawMessage,
+      })
+      return await r.json()
     })
   },
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env -S deno run --no-config --allow-net --allow-read --allow-env=HOME --ext ts
 
 import { port } from '../const.ts'
-import { apis, callApi, isNonNullish, parseUSComment } from '../common.ts'
+import { isNonNullish, parseUSComment } from '../common.ts'
 import { expandGlob } from 'https://deno.land/std@0.205.0/fs/expand_glob.ts'
 import {
   basename,
@@ -12,7 +12,9 @@ import {
 import { Command } from 'https://deno.land/x/cliffy@v0.25.7/command/mod.ts'
 import { Script } from '../type.ts'
 import { delay } from 'https://deno.land/std@0.206.0/async/mod.ts'
-import { websocketMessenger } from '../message.ts'
+import { apiMessenger, websocketMessenger } from '../message.ts'
+
+const apiCaller = apiMessenger.createSender()
 
 function debounce<P extends unknown[], R>(
   func: (...args: P) => R,
@@ -185,6 +187,18 @@ async function serve(_: unknown, ...rawScriptPathGlobs: string[]) {
     })
   })
 
+  const apiHandler = apiMessenger.createHandler(
+    {
+      exec: ({ scriptName }: { scriptName: string }) => {
+        wsSender('exec-order', { scriptName })
+        return null
+      },
+      list: (_: unknown) => {
+        return scriptNameMap
+      },
+    },
+  )
+
   // websocket と HTTP エンドポイント待ち受け
   Deno.serve({
     port,
@@ -212,16 +226,7 @@ async function serve(_: unknown, ...rawScriptPathGlobs: string[]) {
       const [, first = '', rest = ''] = path.match(/^([^\/]+)\/(.+)$/) ?? []
 
       if (first === 'api') {
-        if (!((key: string): key is keyof typeof apis => key in apis)(rest)) {
-          return new Response()
-        }
-
-        return new Response(JSON.stringify(
-          await apis[rest](
-            await request.json().catch(() => ({})),
-            { wsSender, scriptMap: scriptNameMap },
-          ),
-        ))
+        return apiHandler(rest, await request.text().catch(() => 'null'))
       } else if (first === 'script') {
         const script = scriptNameMap[decodeURIComponent(rest)]
         if (!script) {
@@ -238,9 +243,7 @@ async function serve(_: unknown, ...rawScriptPathGlobs: string[]) {
 }
 
 async function exec(_: unknown, scriptName: string) {
-  await callApi('exec', {
-    scriptName,
-  })
+  await apiCaller('exec', { scriptName })
 }
 
 const command = new Command()

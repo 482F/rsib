@@ -17,7 +17,6 @@ export function background(
     'keepalive': () => {},
     'exec-order': (message) => {
       const script = scriptMap[message.scriptName]
-      console.log({ script })
       if (!script) {
         return
       }
@@ -41,7 +40,6 @@ export function background(
           delete scriptMap[name]
         }
       })
-      console.log('updated', { scriptMap })
     },
   })
 }
