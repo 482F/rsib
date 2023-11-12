@@ -51,7 +51,7 @@ const handlers = {
 
     sendMessage(tab.id, {
       ...message,
-      scriptUrl: `http://localhost:55923/script/${script.name}#${Date.now()}`,
+      scriptUrl: `http://localhost:${port}/script/${script.name}#${Date.now()}`,
     })
   },
   'update-scriptmap': (message) => {
