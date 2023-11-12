@@ -8,6 +8,7 @@ export type WsMessage =
   } | {
     type: 'update-scriptmap'
     scriptMap: Record<string, Script | null>
+    isInit: boolean
   })
 
 export type Script = {

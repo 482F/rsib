@@ -55,6 +55,12 @@ const handlers = {
     })
   },
   'update-scriptmap': (message) => {
+    if (message.isInit) {
+      Object.keys(scriptMap).forEach((key) => {
+        delete scriptMap[key]
+      })
+    }
+
     Object.entries(message.scriptMap).forEach(([name, script]) => {
       if (script) {
         scriptMap[name] = script
