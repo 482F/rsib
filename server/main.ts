@@ -8,11 +8,13 @@ import {
   dirname,
   globToRegExp,
   resolve,
+  toFileUrl,
 } from 'https://deno.land/std@0.205.0/path/mod.ts'
 import { Command } from 'https://deno.land/x/cliffy@v0.25.7/command/mod.ts'
 import { Script } from '../type.ts'
 import { delay } from 'https://deno.land/std@0.206.0/async/mod.ts'
 import { apiMessenger, websocketMessenger } from '../message.ts'
+import * as sourceMap from 'npm:source-map'
 
 const apiCaller = apiMessenger.createSender()
 
@@ -228,10 +230,35 @@ async function serve(_: unknown, ...rawScriptPathGlobs: string[]) {
             return new Response()
           }
 
-          const file = await Deno.open(script.dist ?? script.path, {
-            read: true,
-          })
-          return new Response(file.readable)
+          let body = await Deno.readTextFile(script.dist ?? script.path)
+          const sourceMapContent = await fetch(
+            body.match(/\/\/# sourceMappingURL=(.+)$/m)?.[1] ??
+              toFileUrl(script.dist + '.map').toString(),
+          )
+            .then((r) => r.text())
+            .catch(() => {})
+          if (sourceMapContent) {
+            const originalConsumer = await new sourceMap.SourceMapConsumer(
+              sourceMapContent,
+            )
+
+            const node = sourceMap.SourceNode.fromStringWithSourceMap(
+              body,
+              await new sourceMap.SourceMapConsumer(sourceMapContent),
+            )
+            node.prepend(';(async () => {\n')
+            node.add('\n})()')
+
+            const { code, map } = node.toStringWithSourceMap()
+
+            body = code +
+              `\n//# sourceMappingURL=http://localhost:${port}/sourcemap/${script.name}`
+            script.sourceMap = map.toString()
+          }
+
+          return new Response(body)
+        } else if (first === 'sourcemap') {
+          return new Response(scriptNameMap[rest]?.sourceMap ?? '')
         }
 
         return new Response()
