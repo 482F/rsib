@@ -1,19 +1,15 @@
 /// <reference types="https://unpkg.com/chrome-types@0.1.153/index.d.ts" />
 
-import { Message } from '../../ext-type.ts'
-
 import { background } from '../../background.ts'
 import { isNonNullish } from '../../../common.ts'
 
-function sendMessage(tabIds: number[], message: Message) {
-  tabIds.forEach((tabId) =>
-    chrome.tabs.sendMessage(tabId, JSON.stringify(message))
-  )
+function sendMessage(tabIds: number[], rawMessage: string) {
+  tabIds.forEach((tabId) => chrome.tabs.sendMessage(tabId, rawMessage))
 }
 
-background(async (body, option) => {
+background(async (body, { activeTab } = {}) => {
   const tabIds = await (async () => {
-    if (option?.activeTab) {
+    if (activeTab) {
       const windowId = await chrome.windows.getLastFocused().then((win) =>
         win.id
       )
@@ -32,7 +28,6 @@ background(async (body, option) => {
       return tabs.map(({ id }) => id).filter(isNonNullish)
     }
   })()
-  console.log({ body, option, tabIds })
 
   sendMessage(tabIds, body)
 })
