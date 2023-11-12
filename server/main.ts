@@ -1,13 +1,7 @@
 #!/usr/bin/env -S deno run --no-config --allow-net --allow-read --allow-env=HOME --ext ts
 
 import { port } from '../const.ts'
-import {
-  apis,
-  callApi,
-  createWsSender,
-  isNonNullish,
-  parseUSComment,
-} from '../common.ts'
+import { apis, callApi, isNonNullish, parseUSComment } from '../common.ts'
 import { expandGlob } from 'https://deno.land/std@0.205.0/fs/expand_glob.ts'
 import {
   basename,
@@ -18,6 +12,7 @@ import {
 import { Command } from 'https://deno.land/x/cliffy@v0.25.7/command/mod.ts'
 import { Script } from '../type.ts'
 import { delay } from 'https://deno.land/std@0.206.0/async/mod.ts'
+import { websocketMessenger } from '../message.ts'
 
 function debounce<P extends unknown[], R>(
   func: (...args: P) => R,
@@ -144,7 +139,7 @@ async function serve(_: unknown, ...rawScriptPathGlobs: string[]) {
   )
 
   const webSockets: Set<WebSocket> = new Set()
-  const wsSender = createWsSender(webSockets)
+  const wsSender = websocketMessenger.createSender(webSockets)
 
   // chrome extension background が止まらないように keepalive
   setInterval(() => wsSender('keepalive', {}), 1000 * 20)
@@ -202,7 +197,7 @@ async function serve(_: unknown, ...rawScriptPathGlobs: string[]) {
           wsSender('update-scriptmap', {
             scriptMap: scriptNameMap,
             isInit: true,
-          }, [socket])
+          }, { targets: [socket] })
         }
         socket.onclose = () => {
           webSockets.delete(socket)
