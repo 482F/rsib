@@ -284,7 +284,7 @@ async function exec(_: unknown, scriptName: string) {
 }
 
 const command = new Command()
-  .name('rbsib')
+  .name('rsib')
   .action(() => {
     command.showHelp()
   })
