@@ -45,7 +45,7 @@ export function messengerCreator<
             rawMessage: string,
           ) => MessageUnion['response'])
           & ((rawMessage: string) => MessageUnion['response']),
-      ) => MessageUnion['response'],
+      ) => void,
     ) {
       return function listener(
         handlers: {

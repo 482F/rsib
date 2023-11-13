@@ -1,12 +1,11 @@
 /// <reference types="https://unpkg.com/chrome-types@0.1.153/index.d.ts" />
 
-import { listen } from '../../content.ts'
+import { content } from '../../content.ts'
 
-listen(
+content(
   (listener) => {
     chrome.runtime.onMessage.addListener(
-      (rawMessage, sender, _sendResponse) => {
-
+      (rawMessage, _sender, _sendResponse) => {
         if (typeof rawMessage !== 'string') {
           return
         }
@@ -15,5 +14,8 @@ listen(
         return true
       },
     )
+  },
+  async (_type, rawMessage) => {
+    return await chrome.runtime.sendMessage(rawMessage)
   },
 )
