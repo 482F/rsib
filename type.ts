@@ -4,4 +4,5 @@ export type Script = {
   dist?: string
   match?: string
   runAt?: string
+  sourceMap?: string
 }
