@@ -16,6 +16,7 @@ background((listener) => {
 
       Promise.resolve(listener(rawMessage)).then((response: unknown) => {
         if (isNonNullish(response)) {
+          // @ts-expect-error 何故か sendResponse が引数を取らないような型になっている
           sendResponse(JSON.stringify(response))
         }
       })
