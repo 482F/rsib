@@ -80,7 +80,7 @@ function watchGlobs(
 
 const distResolveRules: {
   key: string
-  resolver: (path: string, metas: Record<string, string>) => string
+  resolver: (path: string, metas: Record<string, string[]>) => string
 }[] = [
   { key: 'path', resolver: (path) => path },
   { key: 'name', resolver: (path) => basename(path) },
@@ -102,15 +102,15 @@ async function readScript(scriptPath: string): Promise<Script> {
   const dist = distResolveRules.reduce(
     (dist, rule) =>
       dist.replaceAll(`\${${rule.key}}`, rule.resolver(scriptPath, metas)),
-    metas.dist ?? '',
+    metas.dist?.at(-1) ?? '',
   )
 
   return {
-    name: metas.name ?? basename(scriptPath),
+    name: metas.name?.at(-1) ?? basename(scriptPath),
     path: scriptPath,
     dist,
-    match: metas.match,
-    runAt: metas['run-at'],
+    match: metas.match ?? [],
+    runAt: metas['run-at'] ?? [],
   }
 }
 
