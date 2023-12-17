@@ -1,6 +1,6 @@
 {
   "tasks": {
-    "dev:server": "deno run --watch --allow-net --allow-read --allow-env=HOME server/main.ts serve",
+    "dev:server": "deno run --watch --allow-net --allow-read --allow-write --allow-env=HOME server/main.ts serve",
     "test": "deno test --allow-write=. --allow-read=.",
     "hook": "deno run --allow-read=. --allow-write=. https://deno.land/x/deno_hooks@0.1.1/mod.ts"
   },
@@ -16,6 +16,9 @@
       "include": [],
       "exclude": []
     }
+  },
+  "imports": {
+    "deno-build": "https://raw.githubusercontent.com/482F/misc/master/deno-build.ts"
   },
   "fmt": {
     "indentWidth": 2,
