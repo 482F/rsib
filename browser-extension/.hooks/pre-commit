@@ -3,5 +3,5 @@
 
 deno fmt
 deno lint
-deno check ./main.ts
+deno check $(find . -name "*.ts")
 deno task test
