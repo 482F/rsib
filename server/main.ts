@@ -1,4 +1,4 @@
-#!/usr/bin/env -S deno run --no-config --allow-net --allow-read --allow-env=HOME --ext ts
+#!/usr/bin/env -S deno run --no-config --allow-net --allow-write --allow-read --allow-env=HOME --ext ts
 
 import { port } from '../const.ts'
 import { isNonNullish, parseUSComment } from '../common.ts'
@@ -8,13 +8,12 @@ import {
   dirname,
   globToRegExp,
   resolve,
-  toFileUrl,
 } from 'https://deno.land/std@0.205.0/path/mod.ts'
 import { Command } from 'https://deno.land/x/cliffy@v0.25.7/command/mod.ts'
 import { Script } from '../type.ts'
 import { delay } from 'https://deno.land/std@0.206.0/async/mod.ts'
 import { apiMessenger, websocketMessenger } from '../message.ts'
-import * as sourceMap from 'npm:source-map'
+import { getRebuilder } from 'deno-build'
 
 const apiCaller = apiMessenger.createSender()
 
@@ -111,6 +110,7 @@ async function readScript(scriptPath: string): Promise<Script> {
     dist,
     match: metas.match ?? [],
     runAt: metas['run-at'] ?? [],
+    require: metas.require ?? [],
   }
 }
 
@@ -141,6 +141,8 @@ async function serve(_: unknown, ...rawScriptPathGlobs: string[]) {
   const scriptPathMap = Object.fromEntries(
     Object.entries(scriptNameMap).map(([, script]) => [script.path, script]),
   )
+
+  const builtMap: Record<string, Uint8Array | undefined> = {}
 
   const webSockets: Set<WebSocket> = new Set()
   const wsSender = websocketMessenger.createSender(webSockets)
@@ -213,8 +215,10 @@ async function serve(_: unknown, ...rawScriptPathGlobs: string[]) {
 
           return response
         }
-        const path = new URL(request.url).pathname.replace(/^\//, '')
+        const url = new URL(request.url)
+        const path = url.pathname.replace(/^\//, '')
         const [, first = '', rest = ''] = path.match(/^([^\/]+)\/(.+)$/) ?? []
+        const param = Object.fromEntries([...url.searchParams.entries()])
 
         if (first === 'api') {
           return new Response(
@@ -230,35 +234,58 @@ async function serve(_: unknown, ...rawScriptPathGlobs: string[]) {
             return new Response()
           }
 
-          let body = await Deno.readTextFile(script.dist ?? script.path)
-          const sourceMapContent = await fetch(
-            body.match(/\/\/# sourceMappingURL=(.+)$/m)?.[1] ??
-              toFileUrl(script.dist + '.map').toString(),
-          )
-            .then((r) => r.text())
-            .catch(() => {})
-          if (sourceMapContent) {
-            const originalConsumer = await new sourceMap.SourceMapConsumer(
-              sourceMapContent,
-            )
+          const body = await Deno.readTextFile(script.dist ?? script.path)
 
-            const node = sourceMap.SourceNode.fromStringWithSourceMap(
-              body,
-              await new sourceMap.SourceMapConsumer(sourceMapContent),
-            )
-            node.prepend(';(async () => {\n')
-            node.add('\n})()')
-
-            const { code, map } = node.toStringWithSourceMap()
-
-            body = code +
-              `\n//# sourceMappingURL=http://localhost:${port}/sourcemap/${script.name}`
-            script.sourceMap = map.toString()
-          }
-
-          return new Response(body)
+          // TODO: ソースマップ削る
+          return new Response(body, {
+            headers: {
+              'Access-Control-Allow-Origin': '*',
+              'Content-Type': 'text/javascript',
+            },
+          })
         } else if (first === 'sourcemap') {
           return new Response(scriptNameMap[rest]?.sourceMap ?? '')
+        } else if (first === 'require') {
+          const script = scriptNameMap[rest]
+          if (!script) {
+            return new Response('', { status: 404 })
+          }
+
+          const requireUrl = script.require
+            .map((r) => r.split(' '))
+            .find(([name]) => name && name === param.name)?.[1]
+
+          console.log({ requireUrl })
+
+          if (!requireUrl) {
+            return new Response('', { status: 404 })
+          }
+
+          const built = (builtMap[requireUrl] ??= await (async () => {
+            const tempFilePath = await Deno.makeTempFile({ suffix: '.ts' })
+            await Deno.writeTextFile(
+              tempFilePath,
+              `export * from '${requireUrl}'`,
+            )
+            const [rebuild, stop] = await getRebuilder(
+              tempFilePath,
+              undefined,
+              {
+                minify: true,
+                sourcemap: 'inline',
+              },
+            )
+            const result = await rebuild()
+            await stop()
+            await Deno.remove(tempFilePath)
+            return result.outputFiles?.[0]?.contents
+          })())
+          return new Response(built, {
+            headers: {
+              'Access-Control-Allow-Origin': '*',
+              'Content-Type': 'text/javascript',
+            },
+          })
         }
 
         return new Response()

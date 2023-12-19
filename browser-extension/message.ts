@@ -5,7 +5,7 @@ export const extensionB2CMessenger = messengerCreator<
   ({
     type: 'exec-order'
     request: {
-      scriptUrl: string
+      scriptName: string
     }
   })
 >()

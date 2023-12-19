@@ -44,8 +44,7 @@ export function background(
       }
 
       sender('exec-order', {
-        scriptUrl:
-          `http://localhost:${port}/script/${script.name}#${Date.now()}`,
+        scriptName: script.name,
       }, { activeTab: true })
     },
     'update-scriptmap': (message) => {
