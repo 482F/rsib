@@ -1,7 +1,7 @@
 {
   "tasks": {
     "test": "deno test --allow-write=. --allow-read=.",
-    "hook": "deno run --allow-read=. --allow-write=. https://deno.land/x/deno_hooks@0.1.1/mod.ts"
+    "hook": "deno run --allow-read=. --allow-write=. https://deno.land/x/deno_hooks@0.1.1/mod.ts",
     "clean": "rm -rf dist && mkdir dist",
     "abstract-build": "deno task clean && cp $TARGET/manifest.json dist/ && deno-build $TARGET/src/content.ts dist/content.js $WATCH & deno-build $TARGET/src/background.ts dist/background.js $WATCH",
     "dev": "export WATCH=--watch && deno task abstract-build",
