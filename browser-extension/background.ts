@@ -20,10 +20,12 @@ export function background(
               scriptMap,
             )
               .filter(([, script]) =>
-                new RegExp((script.match ?? '^invalid$').replaceAll('*', '.*'))
-                  .test(
-                    currentUrl,
-                  )
+                script.match.some((match) =>
+                  new RegExp(match.replaceAll('*', '.*'))
+                    .test(
+                      currentUrl,
+                    )
+                )
               ),
           ),
         }

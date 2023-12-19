@@ -5,11 +5,16 @@ function _parseUsComment(body: string) {
         /^\/\/\!?\s+\@(?<key>\S+)\s+(?<value>.+)$/mg,
       )].map((
         rawEntry,
-      ) => [rawEntry.groups?.key ?? '', rawEntry.groups?.value ?? ''])
+      ) => [rawEntry.groups?.key ?? '', rawEntry.groups?.value ?? ''] as const)
     )
 }
 export function parseUSComment(body: string, ancestors: string[]) {
-  return Object.fromEntries([...ancestors, body].flatMap(_parseUsComment))
+  const entries = [...ancestors, body].flatMap(_parseUsComment)
+  const map: Record<string, string[]> = {}
+  for (const [key, value] of entries) {
+    ;(map[key] ??= []).push(value)
+  }
+  return map
 }
 
 export function isNonNullish<T>(val: T): val is T & Record<string, unknown> {
