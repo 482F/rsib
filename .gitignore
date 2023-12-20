@@ -1,1 +1,12 @@
-"\n/dist\n/env.json*\n/env.*.json*\n\n# node\n/node_modules\n/yarn.lock\n/.eslintcache\n\n# deno\n/deno.lock\n"
+
+/dist
+/env.json*
+/env.*.json*
+
+# node
+/node_modules
+/yarn.lock
+/.eslintcache
+
+# deno
+/deno.lock
