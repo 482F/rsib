@@ -86,7 +86,7 @@ const distResolveRules: {
   { key: 'dir', resolver: (path) => dirname(path) },
 ]
 
-async function readScript(scriptPath: string): Promise<Script> {
+async function readScript(scriptPath: string): Promise<Script | null> {
   const body = await Deno.readTextFile(scriptPath)
   const ancestorUsComments = await Promise.all(
     scriptPath.split('/')
@@ -104,8 +104,14 @@ async function readScript(scriptPath: string): Promise<Script> {
     metas.dist?.at(-1) ?? '',
   )
 
+  const name = metas.name?.at(-1)
+
+  if (!name) {
+    return null
+  }
+
   return {
-    name: metas.name?.at(-1) ?? basename(scriptPath),
+    name,
     path: scriptPath,
     dist,
     match: metas.match ?? [],
@@ -135,7 +141,9 @@ async function serve(_: unknown, ...rawScriptPathGlobs: string[]) {
   // UserScript コメントからメタデータ抽出 & 整形
   const scriptNameMap = Object.fromEntries(
     await Promise.all([...scriptPaths].map(readScript)).then((scripts) =>
-      scripts.map((script) => [script.name, script])
+      scripts
+        .filter(isNonNullish)
+        .map((script) => [script.name, script])
     ),
   )
   const scriptPathMap = Object.fromEntries(
@@ -254,8 +262,6 @@ async function serve(_: unknown, ...rawScriptPathGlobs: string[]) {
           const requireUrl = script.require
             .map((r) => r.split(' '))
             .find(([name]) => name && name === param.name)?.[1]
-
-          console.log({ requireUrl })
 
           if (!requireUrl) {
             return new Response('', { status: 404 })

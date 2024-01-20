@@ -18,7 +18,8 @@
     }
   },
   "imports": {
-    "deno-build": "https://raw.githubusercontent.com/482F/misc/master/deno-build.ts"
+    "deno-build": "https://raw.githubusercontent.com/482F/misc/master/deno-build.ts",
+    "482f-utils/": "https://raw.githubusercontent.com/482F/482f-deno-utils/master/"
   },
   "fmt": {
     "indentWidth": 2,
