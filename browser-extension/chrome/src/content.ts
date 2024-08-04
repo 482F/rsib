@@ -1,5 +1,3 @@
-/// <reference types="https://unpkg.com/chrome-types@0.1.153/index.d.ts" />
-
 import { content } from '../../content.ts'
 
 content(

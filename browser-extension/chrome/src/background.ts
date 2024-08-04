@@ -1,5 +1,3 @@
-/// <reference types="https://unpkg.com/chrome-types@0.1.153/index.d.ts" />
-
 import { background } from '../../background.ts'
 import { isNonNullish } from '../../../common.ts'
 
@@ -16,7 +14,6 @@ background((listener) => {
 
       Promise.resolve(listener(rawMessage)).then((response: unknown) => {
         if (isNonNullish(response)) {
-          // @ts-expect-error 何故か sendResponse が引数を取らないような型になっている
           sendResponse(JSON.stringify(response))
         }
       })
