@@ -2,12 +2,20 @@ import { messengerCreator } from '../message.ts'
 import { Script } from '../type.ts'
 
 export const extensionB2CMessenger = messengerCreator<
-  ({
-    type: 'exec-order'
-    request: {
-      scriptName: string
+  (
+    | {
+      type: 'exec-order'
+      request: {
+        scriptName: string
+      }
     }
-  })
+    | {
+      type: 'call-contextmenu'
+      request: {
+        id: string
+      }
+    }
+  )
 >()
 
 export const extensionC2BMessenger = messengerCreator<
@@ -18,6 +26,11 @@ export const extensionC2BMessenger = messengerCreator<
     }
     response: {
       scriptMap: Record<string, Script>
+    }
+  } | {
+    type: 'create-contextmenus'
+    request: {
+      menus: { label: string; id: string }[]
     }
   })
 >()

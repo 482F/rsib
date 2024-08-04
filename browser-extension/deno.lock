@@ -1,0 +1,36 @@
+{
+  "version": "3",
+  "packages": {
+    "specifiers": {
+      "npm:@types/chrome": "npm:@types/chrome@0.0.269"
+    },
+    "npm": {
+      "@types/chrome@0.0.269": {
+        "integrity": "sha512-vF7x8YywnhXX2F06njQ/OE7a3Qeful43C5GUOsUksXWk89WoSFUU3iLeZW8lDpVO9atm8iZIEiLQTRC3H7NOXQ==",
+        "dependencies": {
+          "@types/filesystem": "@types/filesystem@0.0.36",
+          "@types/har-format": "@types/har-format@1.2.15"
+        }
+      },
+      "@types/filesystem@0.0.36": {
+        "integrity": "sha512-vPDXOZuannb9FZdxgHnqSwAG/jvdGM8Wq+6N4D/d80z+D4HWH+bItqsZaVRQykAn6WEVeEkLm2oQigyHtgb0RA==",
+        "dependencies": {
+          "@types/filewriter": "@types/filewriter@0.0.33"
+        }
+      },
+      "@types/filewriter@0.0.33": {
+        "integrity": "sha512-xFU8ZXTw4gd358lb2jw25nxY9QAgqn2+bKKjKOYfNCzN4DKCFetK7sPtrlpg66Ywe3vWY9FNxprZawAh9wfJ3g==",
+        "dependencies": {}
+      },
+      "@types/har-format@1.2.15": {
+        "integrity": "sha512-RpQH4rXLuvTXKR0zqHq3go0RVXYv/YVqv4TnPH95VbwUxZdQlK1EtcMvQvMpDngHbt13Csh9Z4qT9AbkiQH5BA==",
+        "dependencies": {}
+      }
+    }
+  },
+  "remote": {
+    "https://raw.githubusercontent.com/482F/482F-ts-utils/master/src/common.ts": "61b5e6d21fb1773d3ecbdd164d2a2afb2770d54151ff942512d5b2a3c5811a6d",
+    "https://raw.githubusercontent.com/482F/482F-ts-utils/master/src/const.ts": "a20080f09885fe0c7b62160b1e43566594c02361933e39daa429236b6606670d",
+    "https://raw.githubusercontent.com/482F/482F-ts-utils/master/src/result.ts": "d0d40d5c06405d884d384e8ce7f602e6016b079f9ceeb21bda214625f8a9cdeb"
+  }
+}
