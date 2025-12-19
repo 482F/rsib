@@ -1,4 +1,4 @@
-#!/usr/bin/env -S deno run --no-config --allow-net --allow-write --allow-read --allow-env=HOME --ext ts
+#!/usr/bin/env -S deno run --no-lock --allow-net --allow-run --allow-write --allow-read --allow-env --ext ts
 
 import { port } from '../const.ts'
 import { isNonNullish, parseUSComment } from '../common.ts'
