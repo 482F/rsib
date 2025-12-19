@@ -1,4 +1,4 @@
-#!/usr/bin/env -S deno run --no-lock --allow-net --allow-run --allow-write --allow-read --allow-env --ext ts
+#!/usr/bin/env -S deno run -A --unstable-detect-cjs --ext ts
 
 import type esbuild from 'npm:esbuild'
 import { port } from '../const.ts'
