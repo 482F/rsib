@@ -36,6 +36,25 @@ function debounce<P extends unknown[], R>(
   }
 }
 
+async function ancestor(basePath: string, targetName: string | RegExp) {
+  for (
+    let currentBase = basePath;
+    currentBase !== dirname(currentBase);
+    currentBase = dirname(currentBase)
+  ) {
+    if (await Deno.stat(currentBase).then((s) => !s.isDirectory)) {
+      continue
+    }
+
+    for await (const entry of Deno.readDir(currentBase)) {
+      if (entry.name.match(targetName)) {
+        return resolve(currentBase, entry.name)
+      }
+    }
+  }
+  return
+}
+
 function watchGlobs(
   globs: string[],
   handler: (event: Deno.FsEvent) => Promise<void> | void,
@@ -49,7 +68,7 @@ function watchGlobs(
 
   const deepTargetPathSet = new Set(
     globAndIsDeeps.filter(({ isDeep }) => isDeep)
-      .map(({ glob }) => glob.replace(/\*\*.+$/, '')),
+      .map(({ glob }) => glob.replace(/\*\*.*$/, '')),
   )
 
   const shallowTargetPathSet = new Set(
@@ -75,6 +94,20 @@ function watchGlobs(
         await handler(event)
       }
     })
+}
+
+async function build(mainPath: string) {
+  const [rebuild, stop] = await getRebuilder(
+    [mainPath],
+    await ancestor(mainPath, /deno.jsonc?/),
+    {
+      minify: true,
+      sourcemap: 'inline',
+    },
+  )
+  const result = await rebuild()
+  await stop()
+  return result.outputFiles?.[0]?.contents
 }
 
 const distResolveRules: {
@@ -150,7 +183,13 @@ async function serve(_: unknown, ...rawScriptPathGlobs: string[]) {
     Object.entries(scriptNameMap).map(([, script]) => [script.path, script]),
   )
 
-  const builtMap: Record<string, Uint8Array | undefined> = {}
+  const builtMap: Record<string, Uint8Array | undefined> = Object.fromEntries(
+    await Promise.all(
+      Object.entries(scriptPathMap).map(async (
+        [path],
+      ) => [path, await build(path).catch((e) => (console.error(e), ''))]),
+    ),
+  )
 
   const webSockets: Set<WebSocket> = new Set()
   const wsSender = websocketMessenger.createSender(webSockets)
@@ -167,20 +206,28 @@ async function serve(_: unknown, ...rawScriptPathGlobs: string[]) {
         async () => {
           const script = await readScript(path).catch(() => null)
           if (script) {
-            // body 以外のメタデータが同一であれば変更なしとする
-            if (
-              JSON.stringify({ ...script, body: '' }) ===
-                JSON.stringify({ ...(scriptPathMap[path] ?? {}), body: '' })
-            ) {
-              return
-            }
+            const old = scriptPathMap[path]
+            const keys = Object.keys({
+              ...script,
+              ...(old ?? {}),
+            }) as (keyof Script)[]
+            const diffMap = Object.fromEntries(
+              keys.map((key) => [key, script[key] !== old?.[key]] as const),
+            )
+            builtMap[script.path] = await build(script.path)
 
-            scriptPathMap[path] = script
-            scriptNameMap[script.name] = script
-            wsSender('update-scriptmap', {
-              scriptMap: { [script.name]: script },
-              isInit: false,
-            })
+            if (
+              Object.entries(diffMap)
+                .map(([, isDiff]) => isDiff)
+                .some(Boolean)
+            ) {
+              scriptPathMap[path] = script
+              scriptNameMap[script.name] = script
+              wsSender('update-scriptmap', {
+                scriptMap: { [script.name]: script },
+                isInit: false,
+              })
+            }
           } else {
             const { name } = scriptPathMap[path] ?? {}
             if (!name) {
@@ -242,7 +289,7 @@ async function serve(_: unknown, ...rawScriptPathGlobs: string[]) {
             return new Response()
           }
 
-          const body = await Deno.readTextFile(script.dist ?? script.path)
+          const body = builtMap[script.path]
 
           // TODO: ソースマップ削る
           return new Response(body, {
@@ -273,18 +320,9 @@ async function serve(_: unknown, ...rawScriptPathGlobs: string[]) {
               tempFilePath,
               `export * from '${requireUrl}'`,
             )
-            const [rebuild, stop] = await getRebuilder(
-              tempFilePath,
-              undefined,
-              {
-                minify: true,
-                sourcemap: 'inline',
-              },
-            )
-            const result = await rebuild()
-            await stop()
+            const result = await build(tempFilePath)
             await Deno.remove(tempFilePath)
-            return result.outputFiles?.[0]?.contents
+            return result
           })())
           return new Response(built, {
             headers: {
