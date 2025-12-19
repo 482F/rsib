@@ -19,5 +19,17 @@ export const extensionC2BMessenger = messengerCreator<
     response: {
       scriptMap: Record<string, Script>
     }
+  } | {
+    type: 'fetch'
+    request: {
+      url: string
+      method: string
+      headers: Record<string, string>
+      bodyType: 'blob' | 'formData' | 'string'
+      body: unknown
+    }
+    response: {
+      body: number[] | undefined
+    }
   })
 >()

@@ -14,6 +14,8 @@ export function messengerCreator<
     response?: Record<string, unknown>
   },
 >() {
+  type Promisable<T> = Promise<T> | T
+
   type MessageByType<Type extends MessageUnion['type']> =
     & { type: Type }
     & MessageUnion
@@ -27,7 +29,9 @@ export function messengerCreator<
     ) {
       return async function sender<
         Type extends MessageUnion['type'],
-        Message extends ({ type: Type } & MessageUnion),
+        Message extends { type: Type } & MessageUnion =
+          & { type: Type }
+          & MessageUnion,
       >(
         type: Type,
         request: Message['request'],
@@ -43,15 +47,15 @@ export function messengerCreator<
           & ((
             type: MessageUnion['type'],
             rawMessage: string,
-          ) => MessageUnion['response'])
-          & ((rawMessage: string) => MessageUnion['response']),
+          ) => Promisable<MessageUnion['response']>)
+          & ((rawMessage: string) => Promisable<MessageUnion['response']>),
       ) => void,
     ) {
       return function listener(
         handlers: {
           [type in MessageUnion['type']]: (
             request: MessageByType<type>['request'],
-          ) => MessageByType<type>['response']
+          ) => Promisable<MessageByType<type>['response']>
         },
       ) {
         rawListener(
