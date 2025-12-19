@@ -1,3 +1,14 @@
+// TODO: funcName を uscomment に設定し、それを呼び出すように (vue が default export できないので)
+// TODO: name が被るとおかしなことになる？あと name をあとから変えても
+// TODO: option ページ
+// TODO: ビルドエラーの表示
+// TDOO: 自動テスト
+// リファクタリング方針:
+//   1. ファイルシステム層抽象化: readScript, watchGlobs, ancestor を interface 化
+//   2. ビルダー層分離: builts オブジェクトを独立クラスに、getBuilder を interface 化
+//   3. 通信層分離: WebSocket 管理と HTTP ハンドラのルーティングロジック分離
+//   4. スクリプト管理分離: update 関数と scriptNameMap/scriptPathMap の状態管理を独立
+//   5. serve 関数 (L136-340) を class 化して依存注入可能に
 {
   "tasks": {
     "dev:server": "deno run --watch --allow-net --allow-read --allow-write --allow-env=HOME server/main.ts serve",
@@ -18,8 +29,9 @@
     }
   },
   "imports": {
-    "deno-build": "https://raw.githubusercontent.com/482F/misc/master/deno-build.ts",
-    "482f-utils/": "https://raw.githubusercontent.com/482F/482f-deno-utils/master/"
+    // "deno-build": "https://raw.githubusercontent.com/482F/misc/master/deno-build.ts",
+    "deno-build": "/home/normal/git/misc/deno-build.ts",
+    "482f-utils/": "https://raw.githubusercontent.com/482F/482f-deno-utils/master/",
   },
   "fmt": {
     "indentWidth": 2,
