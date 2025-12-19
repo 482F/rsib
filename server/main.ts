@@ -259,7 +259,14 @@ async function serve(_: unknown, ...rawScriptPathGlobs: string[]) {
   scriptPaths.forEach(update)
   // glob 下を監視
   watchGlobs(scriptPathGlobs, (e) => {
-    if (!['create', 'rename', 'remove'].includes(e.kind)) {
+    if (
+      ![
+        'create',
+        'rename',
+        'modify', // TODO: 単一の編集で複数回ビルドされていないか確認。依存の方では esbuild からのみ発火するけど、本体だと？debounce されてるのかな
+        'remove',
+      ].includes(e.kind)
+    ) {
       return
     }
     e.paths.forEach(update)
