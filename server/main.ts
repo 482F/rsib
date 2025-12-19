@@ -300,36 +300,6 @@ async function serve(_: unknown, ...rawScriptPathGlobs: string[]) {
           })
         } else if (first === 'sourcemap') {
           return new Response(scriptNameMap[rest]?.sourceMap ?? '')
-        } else if (first === 'require') {
-          const script = scriptNameMap[rest]
-          if (!script) {
-            return new Response('', { status: 404 })
-          }
-
-          const requireUrl = script.require
-            .map((r) => r.split(' '))
-            .find(([name]) => name && name === param.name)?.[1]
-
-          if (!requireUrl) {
-            return new Response('', { status: 404 })
-          }
-
-          const built = (builtMap[requireUrl] ??= await (async () => {
-            const tempFilePath = await Deno.makeTempFile({ suffix: '.ts' })
-            await Deno.writeTextFile(
-              tempFilePath,
-              `export * from '${requireUrl}'`,
-            )
-            const result = await build(tempFilePath)
-            await Deno.remove(tempFilePath)
-            return result
-          })())
-          return new Response(built, {
-            headers: {
-              'Access-Control-Allow-Origin': '*',
-              'Content-Type': 'text/javascript',
-            },
-          })
         }
 
         return new Response()
