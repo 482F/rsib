@@ -1,5 +1,6 @@
 #!/usr/bin/env -S deno run --no-lock --allow-net --allow-run --allow-write --allow-read --allow-env --ext ts
 
+import type esbuild from 'npm:esbuild'
 import { port } from '../const.ts'
 import { isNonNullish, parseUSComment } from '../common.ts'
 import { expandGlob } from 'https://deno.land/std@0.205.0/fs/expand_glob.ts'
@@ -13,28 +14,10 @@ import { Command } from 'https://deno.land/x/cliffy@v0.25.7/command/mod.ts'
 import { Script } from '../type.ts'
 import { delay } from 'https://deno.land/std@0.206.0/async/mod.ts'
 import { apiMessenger, websocketMessenger } from '../message.ts'
-import { getRebuilder } from 'deno-build'
+import * as denoBuild from 'deno-build'
+import { debounce } from 'npm:es-toolkit'
 
 const apiCaller = apiMessenger.createSender()
-
-function debounce<P extends unknown[], R>(
-  func: (...args: P) => R,
-  waitMs: number,
-): (...args: P) => Promise<R> {
-  let resolver: (result: R) => void = () => {}
-  let promise: Promise<R> = new Promise((r) => resolver = r)
-  let lastCalled = -Infinity
-  return async (...args: P) => {
-    const current = lastCalled = Date.now()
-    await delay(waitMs)
-    if (lastCalled !== current) {
-      return promise
-    }
-    resolver(await func(...args))
-    promise = new Promise((r) => resolver = r)
-    return promise
-  }
-}
 
 async function ancestor(basePath: string, targetName: string | RegExp) {
   for (
@@ -96,18 +79,15 @@ function watchGlobs(
     })
 }
 
-async function build(mainPath: string) {
-  const [rebuild, stop] = await getRebuilder(
-    [mainPath],
-    await ancestor(mainPath, /deno.jsonc?/),
+async function getBuilder(mainPath: string) {
+  return denoBuild.getBuilder(
+    mainPath,
+    { denoConfigPath: await ancestor(mainPath, /deno.jsonc?/) },
     {
       minify: true,
       sourcemap: 'inline',
     },
   )
-  const result = await rebuild()
-  await stop()
-  return result.outputFiles?.[0]?.contents
 }
 
 const distResolveRules: {
@@ -154,6 +134,62 @@ async function readScript(scriptPath: string): Promise<Script | null> {
 }
 
 async function serve(_: unknown, ...rawScriptPathGlobs: string[]) {
+  const builts = (() => {
+    const builtMap: {
+      [path in string]: Promise<
+        Awaited<ReturnType<typeof getBuilder>> & {
+          lastContents: null | Uint8Array
+        }
+      >
+    } = {}
+
+    return {
+      async get(path: string) {
+        return await builtMap[path]
+      },
+      add(
+        path: string,
+        onBuilt?: (result: esbuild.BuildResult) => void | Promise<void>,
+      ) {
+        const { promise, resolve } = Promise.withResolvers<
+          Awaited<typeof builtMap[string]>
+        >()
+        builtMap[path] ??= promise
+
+        if (builtMap[path] !== promise) {
+          return
+        }
+        ;(async () => {
+          const builder: Awaited<typeof builtMap[string]> = await getBuilder(
+            path,
+          ).then((r) => ({
+            ...r,
+            lastContents: null,
+          }))
+
+          for await (const result of builder.results) {
+            builder.lastContents = result.outputFiles?.[0]?.contents ??
+              builder.lastContents
+            resolve(builder)
+            await onBuilt?.(result)
+          }
+        })()
+      },
+      async remove(path: string) {
+        ;(await this.get(path))?.dispose()
+        delete builtMap[path]
+      },
+    }
+  })()
+
+  const webSockets: Set<WebSocket> = new Set()
+  const wsSender = websocketMessenger.createSender(webSockets)
+
+  // chrome extension background が止まらないように keepalive
+  setInterval(() => wsSender('keepalive', {}), 1000 * 20)
+
+  const updateFunctionMap: Record<string, () => void> = {}
+
   // ホームディレクトリ展開 (ログインユーザのみ)
   const scriptPathGlobs = rawScriptPathGlobs.map((glob) =>
     glob.replace(/^~/, Deno.env.get('HOME') || '~')
@@ -171,79 +207,62 @@ async function serve(_: unknown, ...rawScriptPathGlobs: string[]) {
     }
   }
 
-  // UserScript コメントからメタデータ抽出 & 整形
-  const scriptNameMap = Object.fromEntries(
-    await Promise.all([...scriptPaths].map(readScript)).then((scripts) =>
-      scripts
-        .filter(isNonNullish)
-        .map((script) => [script.name, script])
-    ),
-  )
-  const scriptPathMap = Object.fromEntries(
-    Object.entries(scriptNameMap).map(([, script]) => [script.path, script]),
-  )
+  const scriptNameMap: { [name in string]: Script } = {}
+  const scriptPathMap: { [path in string]: Script } = {}
 
-  const builtMap: Record<string, Uint8Array | undefined> = Object.fromEntries(
-    await Promise.all(
-      Object.entries(scriptPathMap).map(async (
-        [path],
-      ) => [path, await build(path).catch((e) => (console.error(e), ''))]),
-    ),
-  )
+  function update(path: string) {
+    ;(updateFunctionMap[path] ??= debounce(
+      async () => {
+        // UserScript コメントからメタデータ抽出 & 整形
+        const script = await readScript(path).catch(() => null)
+        if (script) {
+          const old = scriptPathMap[path]
+          const keys = Object.keys({
+            ...script,
+            ...(old ?? {}),
+          }) as (keyof Script)[]
+          const diffMap = Object.fromEntries(
+            keys.map((key) => [key, script[key] !== old?.[key]] as const),
+          )
+          builts.add(script.path, updateFunctionMap[path])
 
-  const webSockets: Set<WebSocket> = new Set()
-  const wsSender = websocketMessenger.createSender(webSockets)
-
-  // chrome extension background が止まらないように keepalive
-  setInterval(() => wsSender('keepalive', {}), 1000 * 20)
-
-  const updateFunctionMap: Record<string, () => void> = {}
-
-  // glob 下を監視
-  watchGlobs(scriptPathGlobs, (e) => {
-    e.paths.forEach((path) => {
-      ;(updateFunctionMap[path] ??= debounce(
-        async () => {
-          const script = await readScript(path).catch(() => null)
-          if (script) {
-            const old = scriptPathMap[path]
-            const keys = Object.keys({
-              ...script,
-              ...(old ?? {}),
-            }) as (keyof Script)[]
-            const diffMap = Object.fromEntries(
-              keys.map((key) => [key, script[key] !== old?.[key]] as const),
-            )
-            builtMap[script.path] = await build(script.path)
-
-            if (
-              Object.entries(diffMap)
-                .map(([, isDiff]) => isDiff)
-                .some(Boolean)
-            ) {
-              scriptPathMap[path] = script
-              scriptNameMap[script.name] = script
-              wsSender('update-scriptmap', {
-                scriptMap: { [script.name]: script },
-                isInit: false,
-              })
-            }
-          } else {
-            const { name } = scriptPathMap[path] ?? {}
-            if (!name) {
-              return
-            }
-            delete scriptPathMap[path]
-            delete scriptNameMap[name]
+          if (
+            Object.entries(diffMap)
+              .map(([, isDiff]) => isDiff)
+              .some(Boolean)
+          ) {
+            scriptPathMap[path] = script
+            scriptNameMap[script.name] = script
             wsSender('update-scriptmap', {
-              scriptMap: { [name]: null },
+              scriptMap: { [script.name]: script },
               isInit: false,
             })
           }
-        },
-        1000,
-      ))()
-    })
+        } else {
+          const { name } = scriptPathMap[path] ?? {}
+          if (!name) {
+            return
+          }
+          delete scriptPathMap[path]
+          delete scriptNameMap[name]
+          await builts.remove(path)
+          wsSender('update-scriptmap', {
+            scriptMap: { [name]: null },
+            isInit: false,
+          })
+        }
+      },
+      1000,
+    ))()
+  }
+
+  scriptPaths.forEach(update)
+  // glob 下を監視
+  watchGlobs(scriptPathGlobs, (e) => {
+    if (!['create', 'rename', 'remove'].includes(e.kind)) {
+      return
+    }
+    e.paths.forEach(update)
   })
 
   const listener = apiMessenger.createListener(async (listener) => {
@@ -289,10 +308,10 @@ async function serve(_: unknown, ...rawScriptPathGlobs: string[]) {
             return new Response()
           }
 
-          const body = builtMap[script.path]
+          const built = await builts.get(script.path)
 
           // TODO: ソースマップ削る
-          return new Response(body, {
+          return new Response(built?.lastContents, {
             headers: {
               'Access-Control-Allow-Origin': '*',
               'Content-Type': 'text/javascript',
