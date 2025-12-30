@@ -168,8 +168,17 @@ async function serve(_: unknown, ...rawScriptPathGlobs: string[]) {
           }))
 
           for await (const result of builder.results) {
-            builder.lastContents = result.outputFiles?.[0]?.contents ??
-              builder.lastContents
+            const [outputFile] = result.outputFiles ?? []
+            builder.lastContents = (outputFile
+              ? outputFile.contents
+              : `export default () => console.error('rsib build error (${path}):\\n' + \`${
+                result.errors.map(({ text }) =>
+                  text
+                ).join('\n').replaceAll(
+                  '`',
+                  '\\`',
+                )
+              }\`)`) ?? builder.lastContents
             resolve(builder)
             await onBuilt?.(result)
           }
